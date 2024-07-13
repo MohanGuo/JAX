@@ -39,7 +39,8 @@ parser.add_argument('--model', type=str, default='egnn_dynamics',
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
 parser.add_argument('--probabilistic_model', type=str, default='diffusion',
                     help='diffusion')
-
+parser.add_argument('--shuffle', type=bool, default=True,
+                    help='Dataset')
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
 parser.add_argument('--diffusion_steps', type=int, default=500)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
@@ -128,6 +129,12 @@ parser.add_argument('--normalization_factor', type=float, default=1,
 parser.add_argument('--aggregation_method', type=str, default='sum',
                     help='"sum" or "mean"')
 args = parser.parse_args()
+
+seed = 42
+torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
 
 dataset_info = get_dataset_info(args.dataset, args.remove_h)
 
@@ -389,7 +396,7 @@ def main():
     #Optimizer
     optim = optax.adamw(
         learning_rate=args.lr, 
-        weight_decay=1e-12)
+        weight_decay=1e-14)
 
     model_state = train_state.TrainState.create(apply_fn=model.apply,
                                             params=params,

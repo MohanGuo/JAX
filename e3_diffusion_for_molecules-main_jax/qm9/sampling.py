@@ -132,13 +132,17 @@ def sample(rng, args, model_state, dataset_info, prop_dist, model,
     # e.g., node_mask = jnp.array([...])
     # Expand dimensions to create edge_mask
     edge_mask = jnp.expand_dims(node_mask, 1) * jnp.expand_dims(node_mask, 2)
+
     # Create a diagonal mask and invert it
     diag_mask = ~jnp.expand_dims(jnp.eye(edge_mask.shape[1], dtype=bool), 0)
+
     # Apply the diagonal mask
     edge_mask *= diag_mask
+
     # Reshape edge_mask according to specified dimensions
     # Here, batch_size and max_n_nodes must be defined
     edge_mask = edge_mask.reshape((batch_size * max_n_nodes * max_n_nodes, 1))
+    
     # Expand dimensions of node_mask
     node_mask = jnp.expand_dims(node_mask, 2)
 
@@ -151,12 +155,6 @@ def sample(rng, args, model_state, dataset_info, prop_dist, model,
         context = None
 
     if args.probabilistic_model == 'diffusion':
-        # x, h = model.apply(
-        #     model_state.params,
-        #     rng, batch_size, max_n_nodes, node_mask, edge_mask, context,
-        #     fix_noise=fix_noise,
-        #     mode="sample"
-        # )
         x, h = model_state.apply_fn(
             model_state.params,
             rng, batch_size, max_n_nodes, node_mask, edge_mask, context,

@@ -104,6 +104,12 @@ def train_epoch(rng, args, loader, epoch, model, params, model_dp, model_ema, em
         one_hot = data['one_hot'].astype(dtype)
         charges = (data['charges'] if args.include_charges else jnp.zeros(0)).astype(dtype)
 
+        # print(f"x in training before: {x}")
+        # print(f"node_mask in training before: {node_mask}")
+        # print(f"edge_mask in training before: {edge_mask}")
+        # print(f"one_hot in training before: {one_hot}")
+        # print(f"charges in training before: {charges}")
+
         x = remove_mean_with_mask(x, node_mask)
         # Add noise eps ~ N(0, augment_noise) around points.
         # eps = sample_center_gravity_zero_gaussian_with_mask(x.size(), x.device, node_mask)
@@ -132,12 +138,12 @@ def train_epoch(rng, args, loader, epoch, model, params, model_dp, model_ema, em
 
         h = {'categorical': one_hot, 'integer': charges}
         
-        # print(f"x in training: {x}")
-        # print(f"h in training: {h}")
-        # print(f"node_mask in training: {node_mask}")
-        # print(f"edge_mask in training: {edge_mask}")
-        # print(f"context in training: {context}")
-        # print(f"log_pN in training: {log_pN}")
+        # print(f"x in training: {x.shape}")
+        # # print(f"h in training: {h.shape}")
+        # print(f"node_mask in training: {node_mask.shape}")
+        # print(f"edge_mask in training: {edge_mask.shape}")
+        # print(f"context in training: {context.shape}")
+        # print(f"log_pN in training: {log_pN.shape}")
         # optim.zero_grad()
         # grad_fn = jax.value_and_grad(calculate_loss,
         #                          has_aux=True)
@@ -146,11 +152,11 @@ def train_epoch(rng, args, loader, epoch, model, params, model_dp, model_ema, em
 
         training = True
         rng, step_rng = jax.random.split(rng)
-        args.counter=epoch
+        # args.counter=epoch
         #start_batch= time.time()
         state, loss, nll, reg_term, mean_abs_z, ema_state = train_step(step_rng, state, x, h, node_mask, edge_mask, context, log_pN, args.ode_regularization, ema_state)
         #print(f"Batch took {time.time() - start_batch:.1f} seconds.")
-
+        print(f"Loss and batch nll in training: {loss}, {nll}")
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -164,20 +170,20 @@ def train_epoch(rng, args, loader, epoch, model, params, model_dp, model_ema, em
             #       f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
         #####TODO Comment for fast processing
-        if (epoch % args.test_epochs == 0) and (i % args.visualize_every_batch == 0) and not (epoch == 0 and i == 0):
-            # print("\n\n\n\n save and sample conditional!!!!!")
-            start = time.time()
-            #rng split
-            rng, rng_sample = jax.random.split(rng, 2)
-            #rng split
-            if len(args.conditioning) > 0:
-                save_and_sample_conditional(rng_sample, args, state, prop_dist, dataset_info, model, epoch=epoch)
-            save_and_sample_chain(rng_sample, model_ema, args, dataset_info, prop_dist, model_state=state, epoch=epoch, batch_id=str(i))
+        # if (epoch % args.test_epochs == 0) and (i % args.visualize_every_batch == 0) and not (epoch == 0 and i == 0):
+        #     # print("\n\n\n\n save and sample conditional!!!!!")
+        #     start = time.time()
+        #     #rng split
+        #     rng, rng_sample = jax.random.split(rng, 2)
+        #     #rng split
+        #     if len(args.conditioning) > 0:
+        #         save_and_sample_conditional(rng_sample, args, state, prop_dist, dataset_info, model, epoch=epoch)
+        #     save_and_sample_chain(rng_sample, model_ema, args, dataset_info, prop_dist, model_state=state, epoch=epoch, batch_id=str(i))
 
-            print(f'Sampling took {time.time() - start:.2f} seconds')
+        #     print(f'Sampling took {time.time() - start:.2f} seconds')
 
-            vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_{i}", dataset_info=dataset_info, wandb=wandb)
-            vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_{i}/chain/", dataset_info, wandb=wandb)
+        #     vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_{i}", dataset_info=dataset_info, wandb=wandb)
+        #     vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_{i}/chain/", dataset_info, wandb=wandb)
         #####TODO COmment for fast processing
         wandb.log({"Batch NLL": nll.item()}, commit=True)
         if args.break_train_epoch:
@@ -263,7 +269,8 @@ def test(rng, args, loader, epoch, eval_model, device, dtype, property_norms, no
         # x,node_mask,one_hot,context,edge_mask=pad_inputs(x,node_mask,one_hot,context,edge_mask)
         x, node_mask, one_hot, charges, context, edge_mask = pad_inputs(x, node_mask, one_hot, charges, context, edge_mask, max_nodes=29)
 
-        nll=test_step(rng, model_state,log_pN, x,node_mask,one_hot,context,edge_mask,charges)
+        rng, rng_test = jax.random.split(rng, 2)
+        nll=test_step(rng_test, model_state,log_pN, x,node_mask,one_hot,context,edge_mask,charges)
 
 
 
@@ -275,7 +282,7 @@ def test(rng, args, loader, epoch, eval_model, device, dtype, property_norms, no
             pass
         if break_loop:
             break
-
+    print(f"Test Nll:{nll_epoch / n_samples}")
     return nll_epoch / n_samples
 
 
@@ -300,20 +307,20 @@ def sample_different_sizes_and_save(rng, model, nodes_dist, args, dataset_info, 
         one_hot, charges, x, node_mask = sample(rng_s2, args, model, prop_dist=prop_dist,
                                                 nodesxsample=nodesxsample,
                                                 dataset_info=dataset_info)
-        print(f"Generated molecule: Positions {x[:-1, :, :]}")
+        # print(f"Generated molecule: Positions {x[:-1, :, :]}")
         vis.save_xyz_file(f'outputs/{args.exp_name}/epoch_{epoch}_{batch_id}/', one_hot, charges, x, dataset_info,
                           batch_size * counter, name='molecule')
 
 
 def analyze_and_save(rng, args, epoch, model_sample, nodes_dist,dataset_info, device,prop_dist, n_samples=1000,batch_size=100):
-    print(f'Analyzing molecule stability at epoch {epoch}...')
+    # print(f'Analyzing molecule stability at epoch {epoch}...')
     batch_size = min(batch_size, n_samples)
     #assert n_samples % batch_size == 0
     molecules = {'one_hot': [], 'x': [], 'node_mask': []}
     for i in range(int(n_samples / batch_size)):
         rng, rng_s3, rng_s4 = jax.random.split(rng,3)
         nodesxsample = nodes_dist.sample(rng_s3, batch_size)
-        print(f"nodesxexample in analyze_and_save: {nodesxsample}")
+        # print(f"nodesxexample in analyze_and_save: {nodesxsample}")
         # one_hot, charges, x, node_mask = sample(args, device, model_sample, dataset_info, prop_dist,
                                                 # nodesxsample=nodesxsample)
         one_hot, charges, x, node_mask = sample(rng_s4, args, model_sample, dataset_info, prop_dist, model_sample,
@@ -329,14 +336,16 @@ def analyze_and_save(rng, args, epoch, model_sample, nodes_dist,dataset_info, de
         one_hot_torch = torch.from_numpy(one_hot_np)
         x_torch = torch.from_numpy(x_np)
         node_mask_torch = torch.from_numpy(node_mask_np)
-
+        # print((f"one_hot_torch: {one_hot_torch}"))
+        # print((f"x_torch: {x_torch}"))
+        # print((f"node_mask_torch: {node_mask_torch}"))
         molecules['one_hot'].append(one_hot_torch)
         molecules['x'].append(x_torch)
         molecules['node_mask'].append(node_mask_torch)
 
     molecules = {key: torch.cat(molecules[key], dim=0) for key in molecules}
     validity_dict, rdkit_tuple = analyze_stability_for_molecules(molecules, dataset_info)
-    print("In analyze_and_save, log stability!")
+    # print("In analyze_and_save, log stability!")
     wandb.log(validity_dict)
     if rdkit_tuple is not None:
         wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})

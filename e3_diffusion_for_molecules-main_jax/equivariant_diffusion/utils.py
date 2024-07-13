@@ -55,6 +55,10 @@ def remove_mean_with_mask(x, node_mask):
     #assert masked_max_abs_value < 1e-5, f'Error {masked_max_abs_value} too high'
     N = jnp.sum(node_mask,1, keepdims=True)
     mean = jnp.sum(x, 1, keepdims=True) / N
+    # print(f"x in remove_mean_with_mask: {x}")
+    # print(f"masked_max_abs_value: {masked_max_abs_value}")
+    # print(f"N: {N}")
+    # print(f"mean: {mean}")
     x = x - mean * node_mask
     return x
 
@@ -145,12 +149,14 @@ def center_gravity_zero_gaussian_log_likelihood_with_mask(x, node_mask):
 
 
 def sample_center_gravity_zero_gaussian_with_mask(rng, size, node_mask):
-    #assert len(size) == 3
-    # print("DL2: hack here, for the key")
-    # key=jax.random.PRNGKey(42)
+    # print(f"size: {size}")
+    assert len(size) == 3
+    #TODO test
     x = jax.random.normal(rng, size)
-
+    # x = jnp.full(size, 7)
     x_masked = x * node_mask
+    # print(f"x in sample_center_gravity_zero_gaussian_with_mask: {x}, {x.shape}")
+    # print(f"node_mask in sample_center_gravity_zero_gaussian_with_mask: {node_mask}, {node_mask.shape}")
 
     # This projection only works because Gaussian is rotation invariant around
     # zero and samples are independent!
@@ -165,8 +171,6 @@ def standard_gaussian_log_likelihood(x):
 
 
 def sample_gaussian(rng, size):
-    # print("DL2: hack here, for the key")
-    # key=jax.random.PRNGKey(42)
     x = jax.random.normal(rng, size)
     # x = jnp.randn(size, device=device)
     return x
@@ -180,9 +184,8 @@ def standard_gaussian_log_likelihood_with_mask(x, node_mask):
 
 
 def sample_gaussian_with_mask(rng, size, node_mask):
-    # print("DL2: hack here, for the key")
-    # key=jax.random.PRNGKey(42)
+    #TODO test
     x = jax.random.normal(rng, size)
-    # x = jnp.randn(size, device=device)
+    # x = jnp.full(size, 4)
     x_masked = x * node_mask
     return x_masked

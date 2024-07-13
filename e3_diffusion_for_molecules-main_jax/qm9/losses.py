@@ -33,6 +33,8 @@ def compute_loss_and_nll_train(rng, state, params, log_pN, x, h_int,h_cat, node_
     #n_dims is always 3
 
     edge_mask = jnp.reshape(edge_mask, (bs, n_nodes * n_nodes))
+    # print(f"edge_mask in compute_loss_and_nll_train:{edge_mask}, {edge_mask.shape}")
+    # print(f"n_nodes:{n_nodes}")
     nll = state.apply_fn(params, rng, x, h, node_mask, edge_mask, context, training)
     nll = nll - log_pN
     # Average over batch.

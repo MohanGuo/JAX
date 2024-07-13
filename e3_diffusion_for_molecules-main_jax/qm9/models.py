@@ -31,14 +31,14 @@ def check_mask_correct(variables, node_mask):
 
 
 def process_input(args, dataloader_train, device, property_norms):
-    # device='cpu'
-    dtype = torch.float32
+    # device='cpu' 
+    dtype = jnp.float32
     exmp_imgs = next(iter(dataloader_train))
-    x_example = exmp_imgs['positions']
-    node_mask_example = jnp.expand_dims(exmp_imgs['atom_mask'],2)
-    edge_mask_example = exmp_imgs['edge_mask']
-    one_hot_example = exmp_imgs['one_hot']
-    charges_example = (exmp_imgs['charges'] if args.include_charges else jnp.zeros(0))
+    x_example = exmp_imgs['positions'].astype(dtype)
+    node_mask_example = jnp.expand_dims(exmp_imgs['atom_mask'],2).astype(dtype)
+    edge_mask_example = exmp_imgs['edge_mask'].astype(dtype)
+    one_hot_example = exmp_imgs['one_hot'].astype(dtype)
+    charges_example = (exmp_imgs['charges'] if args.include_charges else jnp.zeros(0)).astype(dtype)
     h_example = {'categorical': one_hot_example, 'integer': charges_example}
 
     x_example = remove_mean_with_mask(x_example, node_mask_example)
@@ -62,6 +62,17 @@ def process_input(args, dataloader_train, device, property_norms):
         assert_correctly_masked(context_example, node_mask_example)
     else:
         context_example = None
+
+    bs, n_nodes, n_dims = jnp.shape(x_example) 
+
+
+    assert(n_dims==3)
+    assert(bs==64)
+    #bs is always 64
+    #n_nodes varies
+    #n_dims is always 3
+
+    edge_mask_example = jnp.reshape(edge_mask_example, (bs, n_nodes * n_nodes))
 
     return x_example, h_example, node_mask_example, edge_mask_example, context_example
 
@@ -140,6 +151,13 @@ def get_model(args, device, dataset_info, dataloader_train, rng, property_norms)
                                                                                                     property_norms)
         rng, inp_rng, init_rng = jax.random.split(rng, 3)
         # inp = jax.random.normal(inp_rng, (args.batch_size, args.nf))  # Batch size 8, input size 2
+        seed = 0
+        rng = jax.random.PRNGKey(seed)
+        # seed = 0
+        # init_rng = jax.random.PRNGKey(seed)
+        # seed = 17
+        # inp_rng = jax.random.PRNGKey(seed)
+        rng, inp_rng, init_rng = jax.random.split(rng, 3)
         params_vdm = vdm.init(init_rng, inp_rng, x_example, h_example, node_mask_example, edge_mask_example, context_example, training=True)
         # params_vdm = vdm.init(init_rng, inp)
 
@@ -149,7 +167,7 @@ def get_model(args, device, dataset_info, dataloader_train, rng, property_norms)
         # print(f"vdm : {vdm}")
 
         # return vdm, nodes_dist, prop_dist
-        print("Node Distribution!", nodes_dist)
+        # print("Node Distribution!", nodes_dist)
         return params_vdm, vdm, nodes_dist, prop_dist
 
     else:
@@ -188,7 +206,7 @@ class DistributionNodes:
 
         self.prob = prob.astype(jnp.float32)
         entropy = jnp.sum(self.prob * jnp.log(self.prob + 1e-30))
-        print("Entropy of n_nodes: H[N]", entropy.item())
+        # print("Entropy of n_nodes: H[N]", entropy.item())
         # self.m = tfd.Categorical(probs=self.prob)
 
     def sample(self, rng, n_samples=1):

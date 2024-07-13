@@ -29,12 +29,14 @@ def retrieve_dataloaders(cfg):
         if filter_n_atoms is not None:
             print("Retrieving molecules with only %d atoms" % filter_n_atoms)
             datasets = filter_atoms(datasets, filter_n_atoms)
-
+        # print(datasets['train'][0])
         # Construct PyTorch dataloaders from datasets
         preprocess = PreprocessQM9(load_charges=cfg.include_charges)
         dataloaders = {split: DataLoader(dataset,
                                          batch_size=batch_size,
                                          shuffle=args.shuffle if (split == 'train') else False,
+                                        #TODO test
+                                        #  shuffle=False,
                                          num_workers=num_workers,
                                          collate_fn=preprocess.collate_fn, drop_last=True)
 

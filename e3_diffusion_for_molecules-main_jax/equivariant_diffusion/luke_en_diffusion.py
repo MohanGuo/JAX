@@ -361,6 +361,7 @@ class EnVariationalDiffusion(nn.Module):
 
     def phi(self, x, t, node_mask, edge_mask, context):
         # net_out = self.dynamics._forward(t, x, node_mask, edge_mask, context)
+        # print(f"Input into the egnn in the diffusion model: {t}, {x}, {node_mask}, {edge_mask}, {context}")
         net_out = self.dynamics(t, x, node_mask, edge_mask, context)
         return net_out
 
@@ -523,7 +524,7 @@ class EnVariationalDiffusion(nn.Module):
 
         return degrees_of_freedom_x * (- log_sigma_x - 0.5 * jnp.log(2 * jnp.pi))
 
-    def sample_p_xh_given_z0(self, z0, node_mask, edge_mask, context, fix_noise=False):
+    def sample_p_xh_given_z0(self, rng, z0, node_mask, edge_mask, context, fix_noise=False):
         """Samples x ~ p(x|z0)."""
         zeros = jnp.zeros(shape=(z0.shape[0], 1))
         gamma_0 = self.gamma(zeros)
@@ -533,7 +534,8 @@ class EnVariationalDiffusion(nn.Module):
 
         # Compute mu for p(zs | zt).
         mu_x = self.compute_x_pred(net_out, z0, gamma_0)
-        xh = self.sample_normal(mu=mu_x, sigma=sigma_x, node_mask=node_mask, fix_noise=fix_noise)
+
+        xh = self.sample_normal(rng, mu=mu_x, sigma=sigma_x, node_mask=node_mask, fix_noise=fix_noise)
 
         x = xh[:, :, :self.n_dims]
 
@@ -545,12 +547,13 @@ class EnVariationalDiffusion(nn.Module):
         h = {'integer': h_int, 'categorical': h_cat}
         return x, h
 
-    def sample_normal(self, mu, sigma, node_mask, fix_noise=False):
+    def sample_normal(self, rng, mu, sigma, node_mask, fix_noise=False):
         """Samples from a Normal distribution."""
         bs = 1 if fix_noise else mu.shape[0]
         # TODO move rng generation into params -> should be functional
-        rng = jax.random.PRNGKey(0)
+        # rng = jax.random.PRNGKey(0)
         rng, rng_eps = jax.random.split(rng, 2)
+        print(f"rng_eps in sample_normal: {rng_eps}")
         eps = self.sample_combined_position_feature_noise(rng_eps, bs, mu.shape[1], node_mask)
         return mu + sigma * eps
 
@@ -631,8 +634,11 @@ class EnVariationalDiffusion(nn.Module):
             lowest_t = 0
 
         # Sample a timestep t.
-        #TODO sample in JAX
-        t_int = jax.random.randint(rng, shape=(x.shape[0], 1), minval=lowest_t, maxval=self.T + 1)#.float()
+        #TODO test
+        rng, rng_t = jax.random.split(rng,2)
+        # print(f"rng_t in compute_loss: {rng_t}")
+        t_int = jax.random.randint(rng_t, shape=(x.shape[0], 1), minval=lowest_t, maxval=self.T + 1)#.float()
+        # t_int = jnp.full((x.shape[0], 1), 5.0)
         t_int = t_int.astype(jnp.float32)
         # t_int = jnp.randint(
             # lowest_t, self.T + 1, size=(x.shape[0], 1), device=x.device).float()
@@ -645,6 +651,7 @@ class EnVariationalDiffusion(nn.Module):
         s = s_int / self.T
         t = t_int / self.T
 
+        # print(f"s, t: {s}, {t}")
         # Compute gamma_s and gamma_t via the network.
         gamma_s = self.inflate_batch_array(self.gamma(s), x)
         gamma_t = self.inflate_batch_array(self.gamma(t), x)
@@ -653,10 +660,15 @@ class EnVariationalDiffusion(nn.Module):
         alpha_t = self.alpha(gamma_t, x)
         sigma_t = self.sigma(gamma_t, x)
 
+        # print(f"gamma_s, gamma_t: {gamma_s}, {gamma_t}")
+        # print(f"alpha_t: {alpha_t}")
+        # print(f"sigma_t: {sigma_t}")
         # Sample zt ~ Normal(alpha_t x, sigma_t)
         #TODO sample in JAX
-        eps = self.sample_combined_position_feature_noise(rng=rng, n_samples=x.shape[0], n_nodes=x.shape[1], node_mask=node_mask)
+        rng, rng_eps = jax.random.split(rng,2)
+        eps = self.sample_combined_position_feature_noise(rng=rng_eps, n_samples=x.shape[0], n_nodes=x.shape[1], node_mask=node_mask)
 
+        # print(f"eps: {eps}")
         # Concatenate x, h[integer] and h[categorical].
         # xh = jnp.concatenate([x, h['categorical'], h['integer']], axis=2)
         if self.include_charges:
@@ -669,11 +681,18 @@ class EnVariationalDiffusion(nn.Module):
         #diffusion_utils.assert_mean_zero_with_mask(z_t[:, :, :self.n_dims], node_mask)
 
         # Neural net prediction.
+        # print(f"Using phi in compute_loss!")
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
-
+        # print(f"eps: {eps}")
+        # print(f"z_t: {z_t}")
+        # print(f"t: {t}")
+        # print(f"node_mask: {node_mask}")
+        # print(f"edge_mask: {edge_mask}")
+        # print(f"context: {context}")
+        # print(f"net_out: {net_out}")
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps, training=training)
-
+        # print(f"error: {error}")
         if training and self.loss_type == 'l2':
             SNR_weight = jnp.ones_like(error)
         else:
@@ -706,12 +725,14 @@ class EnVariationalDiffusion(nn.Module):
             sigma_0 = self.sigma(gamma_0, x)
 
             # Sample z_0 given x, h for timestep t, from q(z_t | x, h)
+            rng, rng_eps_0 = jax.random.split(rng,2)
             eps_0 = self.sample_combined_position_feature_noise(
-                rng=rng, n_samples=x.shape[0], n_nodes=x.shape[1], node_mask=node_mask)
+                rng=rng_eps_0, n_samples=x.shape[0], n_nodes=x.shape[1], node_mask=node_mask)
             z_0 = alpha_0 * xh + sigma_0 * eps_0
-
+            # print(f"Using phi in compute_loss!")
             net_out = self.phi(z_0, t_zeros, node_mask, edge_mask, context)
-
+            # print(f"eps_0: {eps_0}")
+            # print(f"net_out: {net_out}")
             loss_term_0 = -self.log_pxh_given_z0_without_constants(
                 x, h, z_0, gamma_0, eps_0, net_out, node_mask)
 
@@ -744,7 +765,6 @@ class EnVariationalDiffusion(nn.Module):
             loss = kl_prior + estimator_loss_terms + neg_log_constants
 
         #assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
-
         return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
                       'error': error.squeeze()}
 
@@ -752,7 +772,8 @@ class EnVariationalDiffusion(nn.Module):
     def call_compute_loss(self, rng, x, h, node_mask=None, edge_mask=None, context=None, training=False, **_):
         # Normalize data, take into account volume change in x.
         x, h, delta_log_px = self.normalize(x, h, node_mask)
-
+        # print(f"variables in call_compute_loss: {x}, {h}, {delta_log_px}")
+        # print(f"edge_mask in call_compute_loss:{edge_mask}, {edge_mask.shape}")
         # Reset delta_log_px if not vlb objective.
         if training and self.loss_type == 'l2':
             delta_log_px = jnp.zeros_like(delta_log_px)
@@ -782,6 +803,12 @@ class EnVariationalDiffusion(nn.Module):
         """
         # By default the mode is loss mode
         mode = kwargs.get("mode", "loss")
+        # print(f"args in __call__: {args}")
+        # print(f"kwargs in __call__: {kwargs}")
+        # if 'edge_mask' in kwargs:
+        #     edge_mask = kwargs['edge_mask']
+            # print(f"edge_mask in __call__: {edge_mask}")
+
         if mode == "loss":
             return self.call_compute_loss(*args, **kwargs)
         elif mode == "sample":
@@ -793,7 +820,7 @@ class EnVariationalDiffusion(nn.Module):
         else:
             raise ValueError(f"Mode {mode} not supported")
 
-    def sample_p_zs_given_zt(self, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
+    def sample_p_zs_given_zt(self, rng, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
         """Samples from zs ~ p(zs | zt). Only used during sampling."""
         gamma_s = self.gamma(s)
         gamma_t = self.gamma(t)
@@ -805,6 +832,7 @@ class EnVariationalDiffusion(nn.Module):
         sigma_t = self.sigma(gamma_t, target_tensor=zt)
 
         # Neural net prediction.
+        # print(f"Using phi in sample_p_zs_given_zt!")
         eps_t = self.phi(zt, t, node_mask, edge_mask, context)
 
         # Compute mu for p(zs | zt).
@@ -812,12 +840,25 @@ class EnVariationalDiffusion(nn.Module):
         #diffusion_utils.assert_mean_zero_with_mask(eps_t[:, :, :self.n_dims], node_mask)
         mu = zt / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t
 
+        # print(f"gamma_s:{gamma_s}")
+        # print(f"gamma_t:{gamma_t}")
+        # print(f"sigma2_t_given_s:{sigma2_t_given_s}")
+        # print(f"sigma_t_given_s:{sigma_t_given_s}")
+        # print(f"alpha_t_given_s:{alpha_t_given_s}")
+        # print(f"gamma_t:{gamma_t}")
+        # print(f"sigma_s:{sigma_s}")
+        # print(f"sigma_t:{sigma_t}")
+        # print(f"eps_t:{eps_t}")
+        # print(f"mu:{mu}")
         # Compute sigma for p(zs | zt).
         sigma = sigma_t_given_s * sigma_s / sigma_t
 
         # Sample zs given the paramters derived from zt.
-        zs = self.sample_normal(mu, sigma, node_mask, fix_noise)
-
+        # print(f"mu, signma in sample_p_zs_given_zt: {mu}, {sigma}")
+        
+        zs = self.sample_normal(rng, mu, sigma, node_mask, fix_noise)
+        # print(f"zt in sample_p_zs_given_zt: {zt}")
+        # print(f"zs in sample_p_zs_given_zt: {zt}")
         # Project down to avoid numerical runaway of the center of gravity.
         zs = jnp.concatenate(
             [diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims],
@@ -838,6 +879,8 @@ class EnVariationalDiffusion(nn.Module):
         z_h = utils.sample_gaussian_with_mask(
             rng=rng_gau, size=(n_samples, n_nodes, self.in_node_nf),
             node_mask=node_mask)
+        # print(f"z_x in sample_combined_position_feature_noise: {z_x}")
+        # print(f"z_h in sample_combined_position_feature_noise: {z_h}")
         z = jnp.concatenate([z_x, z_h], axis=2)
         return z
 
@@ -850,10 +893,13 @@ class EnVariationalDiffusion(nn.Module):
         if fix_noise:
             # Noise is broadcasted over the batch axis, useful for visualizations.
             z = self.sample_combined_position_feature_noise(rng, 1, n_nodes, node_mask)
+            # print("Using fixed noise for all samples.")
         else:
             z = self.sample_combined_position_feature_noise(rng, n_samples, n_nodes, node_mask)
+            # print("Using unique noise for each sample.")
 
-        #diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
+        # print(f"Initial noise shape: {z.shape}")
+        # print(f"Initial z sample: {z[:1]}")  # Print the first sample to check
 
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
         for s in reversed(range(0, self.timesteps)):
@@ -861,18 +907,19 @@ class EnVariationalDiffusion(nn.Module):
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
-
-            z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+            rng, rng_st = jax.random.split(rng,2)
+            # print(f"Sampling step {s}: s_array={s_array[0][0]}, t_array={t_array[0][0]}")
+            z = self.sample_p_zs_given_zt(rng_st, s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+            # print(f"z shape after step {s}: {z.shape}")
 
         # Finally sample p(x, h | z_0).
-        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)
-
-        #diffusion_utils.assert_mean_zero_with_mask(x, node_mask)
+        x, h = self.sample_p_xh_given_z0(rng, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+        # print(f"Sampled x and h: x={x}, h={h['categorical'].shape}")
 
         max_cog = jnp.abs(jnp.sum(x, axis=1, keepdims=True)).max().item()
+        # print(f"Max center of gravity offset: {max_cog:.3f}")
         if max_cog > 5e-2:
-            print(f'Warning cog drift with error {max_cog:.3f}. Projecting '
-                  f'the positions down.')
+            # print(f'Warning: cog drift with error {max_cog:.3f}. Projecting the positions down.')
             x = diffusion_utils.remove_mean_with_mask(x, node_mask)
 
         return x, h
@@ -900,9 +947,10 @@ class EnVariationalDiffusion(nn.Module):
             t_array = s_array + 1
             s_array = s_array / self.timesteps
             t_array = t_array / self.timesteps
-
+            
+            rng, rng_st = jax.random.split(rng,2)
             z = self.sample_p_zs_given_zt(
-                s_array, t_array, z, node_mask, edge_mask, context)
+                rng_st, s_array, t_array, z, node_mask, edge_mask, context)
 
             #diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
 
@@ -911,7 +959,7 @@ class EnVariationalDiffusion(nn.Module):
             chain = chain.at[write_index].set(self.unnormalize_z(z, node_mask))
 
         # Finally sample p(x, h | z_0).
-        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
+        x, h = self.sample_p_xh_given_z0(rng, z, node_mask, edge_mask, context)
 
         #diffusion_utils.assert_mean_zero_with_mask(x[:, :, :self.n_dims], node_mask)
 

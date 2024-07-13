@@ -29,6 +29,7 @@ class ProcessedDataset(Dataset):
         Does nothing for other datasets.
 
     """
+    #TODO test
     def __init__(self, data, included_species=None, num_pts=-1, normalize=True, shuffle=True, subtract_thermo=True):
 
         self.data = data

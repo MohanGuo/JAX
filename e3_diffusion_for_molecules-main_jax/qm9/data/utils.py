@@ -75,9 +75,12 @@ def initialize_datasets(args, datadir, dataset, subset=None, splits=None,
             sliced_perm = fixed_perm[0:len(datasets['train']['num_atoms']) // 2]
         else:
             raise Exception('Wrong dataset name')
+        #TODO shuffle
         for key in datasets['train']:
             datasets['train'][key] = datasets['train'][key][sliced_perm]
-
+        # for key in datasets['train']:
+        #    print(f"In initialization: {datasets['train'][key][0]}")
+    # print(f"In initialization: {datasets['train'][0]}")
     # Basic error checking: Check the training/test/validation splits have the same set of keys.
     keys = [list(data.keys()) for data in datasets.values()]
     assert all([key == keys[0] for key in keys]
