@@ -319,9 +319,6 @@ class EnVariationalDiffusion(nn.Module):
 
     def setup(self):
         #assert self.loss_type in {'vlb', 'l2'}
-        if self.noise_schedule == 'learned':
-            #assert self.loss_type == 'vlb', 'A noise schedule can only be learned with a vlb objective.'
-            pass
 
         
         # Only supported parametrization.
@@ -636,7 +633,7 @@ class EnVariationalDiffusion(nn.Module):
         # Sample a timestep t.
         #TODO test
         rng, rng_t = jax.random.split(rng,2)
-        # print(f"rng_t in compute_loss: {rng_t}")
+        print(f"rng_t in compute_loss: {rng_t}")
         t_int = jax.random.randint(rng_t, shape=(x.shape[0], 1), minval=lowest_t, maxval=self.T + 1)#.float()
         # t_int = jnp.full((x.shape[0], 1), 5.0)
         t_int = t_int.astype(jnp.float32)

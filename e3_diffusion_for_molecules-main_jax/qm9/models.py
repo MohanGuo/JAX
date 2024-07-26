@@ -158,6 +158,8 @@ def get_model(args, device, dataset_info, dataloader_train, rng, property_norms)
         # seed = 17
         # inp_rng = jax.random.PRNGKey(seed)
         rng, inp_rng, init_rng = jax.random.split(rng, 3)
+        # inp_rng = jax.random.PRNGKey(0)
+        # init_rng = jax.random.PRNGKey(77)
         params_vdm = vdm.init(init_rng, inp_rng, x_example, h_example, node_mask_example, edge_mask_example, context_example, training=True)
         # params_vdm = vdm.init(init_rng, inp)
 

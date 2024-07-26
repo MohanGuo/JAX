@@ -5,9 +5,19 @@ from jax.nn import initializers
 # from jax.lax import segment_sum
 from jax.nn.initializers import variance_scaling
 import math
-from jax.nn import initializers
 from jax.nn import sigmoid
-from jax.nn.initializers import lecun_normal
+from jax.nn.initializers import lecun_normal, lecun_uniform, normal, uniform, glorot_normal
+
+kernel_initializer = lecun_uniform()
+# bias_initializer = lambda: normal_(mean=0.001)
+bias_initializer = uniform()
+
+def xavier_init(gain):
+    def init(key, shape, dtype):
+        bound = gain * jnp.sqrt(6.0 / (shape[0] + shape[1]))
+        return jax.random.uniform(key, shape, dtype, -bound, bound)
+
+    return init
 
 class GCL(nn.Module):
     input_nf: int
@@ -23,21 +33,21 @@ class GCL(nn.Module):
     def setup(self):
         input_edge = self.input_nf * 2
         self.edge_mlp = nn.Sequential([
-            nn.Dense(features=self.hidden_nf, kernel_init=lecun_normal()),
+            nn.Dense(features=self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer),
             self.act_fn,
-            nn.Dense(features=self.hidden_nf, kernel_init=lecun_normal()),
+            nn.Dense(features=self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer),
             self.act_fn
         ])
 
         self.node_mlp = nn.Sequential([
-            nn.Dense(features=self.hidden_nf, kernel_init=lecun_normal()),
+            nn.Dense(features=self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer),
             self.act_fn,
-            nn.Dense(features=self.output_nf, kernel_init=lecun_normal())
+            nn.Dense(features=self.output_nf, kernel_init=kernel_initializer, bias_init=bias_initializer)
         ])
 
         if self.attention:
             self.att_mlp = nn.Sequential([
-                nn.Dense(features=1, kernel_init=lecun_normal()),
+                nn.Dense(features=1, kernel_init=kernel_initializer, bias_init=bias_initializer),
                 sigmoid
             ])
 
@@ -89,11 +99,15 @@ class EquivariantUpdate(nn.Module):
         input_edge = self.hidden_nf * 2 + self.edges_in_d
         # Setting up the coordinate MLP
         self.coord_mlp = nn.Sequential([
-            nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal()),
+            # nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal()),
+            nn.Dense(self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer),
             self.act_fn,
-            nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal()),
+            # nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal()),
+            nn.Dense(self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer),
             self.act_fn,
-            nn.Dense(1, use_bias=False, kernel_init=variance_scaling(0.001, "fan_avg", "uniform")),
+            # nn.Dense(1, use_bias=False, kernel_init=variance_scaling(0.001, "fan_avg", "uniform")),
+            nn.Dense(1, use_bias=False, kernel_init=variance_scaling(0.000001, "fan_avg", "uniform")),
+            # nn.Dense(1, use_bias=False, kernel_init=xavier_init(gain=0.001)),
         ])
 
     def coord_model(self, h, coord, edge_index, coord_diff, edge_attr, edge_mask):
@@ -212,8 +226,10 @@ class EGNN(nn.Module):
     def setup(self):
         # if self.out_node_nf is None:
         #     self.out_node_nf = self.in_node_nf
-        self.embedding = nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal())
-        self.embedding_out = nn.Dense(self.out_node_nf, kernel_init=initializers.glorot_normal())
+        # self.embedding = nn.Dense(self.hidden_nf, kernel_init=initializers.glorot_normal())
+        self.embedding = nn.Dense(self.hidden_nf, kernel_init=kernel_initializer, bias_init=bias_initializer)
+        # self.embedding_out = nn.Dense(self.out_node_nf, kernel_init=initializers.glorot_normal())
+        self.embedding_out = nn.Dense(self.out_node_nf, kernel_init=kernel_initializer, bias_init=bias_initializer)
         self.coords_range_layer = float(self.coords_range/self.n_layers)
         self.e_blocks = [EquivariantBlock(hidden_nf=self.hidden_nf,
                                           edge_feat_nf=self.in_edge_nf * 2 if self.sin_embedding else 2,
@@ -244,7 +260,8 @@ class EGNN(nn.Module):
         else:
             distances = coord2diff(x, edge_index)[0]
         
-        # print("\n\nh before:", type(h))
+        # print("\n\nh before:", type(h)
+        print(f"h bf: {h.shape}")
         h = self.embedding(h)
         # print("h after embedding:", type(h))
 
